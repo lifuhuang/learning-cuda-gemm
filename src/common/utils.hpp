@@ -21,8 +21,6 @@ __device__ __host__ inline int cdiv(int a, int b)
   }                                                            \
 } while (0)
 
-__device__ __host__ inline int cdiv(int a, int b) { return (a + b - 1) / b; }
-
 struct Event {
   cudaEvent_t e{};
   explicit Event(unsigned flags = cudaEventDefault) { CUDA_CHECK(cudaEventCreateWithFlags(&e, flags)); }
@@ -34,7 +32,7 @@ struct Event {
 
 inline float benchmark(int repeat, int M, int N, int K,
                        const std::function<void()>& work,
-                       bool print_each = true) {
+                       bool print_each = false) {
   Event begin, end;
   float gflops = 0.0f;
   work(); CUDA_CHECK(cudaDeviceSynchronize()); // warmup

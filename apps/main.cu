@@ -1,12 +1,12 @@
 #include <iostream>
 #include <torch/torch.h>
-#include <cute/tensor.hpp>
-#include <cublas_v2.h>
+
+#include "cublas_sgemm.hpp"
+#include "cute_sgemm_v1.hpp"
+#include "utils.hpp"
 
 
-
-
-void validate_gemm(int repeat = 10)
+void validate_gemm(cublasHandle_t handle, int repeat = 10)
 {
     using namespace std;
     const int M = 5120;
@@ -32,7 +32,7 @@ void validate_gemm(int repeat = 10)
     assert(torch::allclose(C, ans));
     cout << "GEMM result is correct." << endl;
 
-    cublas_sgemm(A_ptr, B_ptr, C_ptr, M, N, K);
+    cublas_sgemm(handle, A_ptr, B_ptr, C_ptr, M, N, K);
     cudaDeviceSynchronize();
     cout << "cuBLAS GEMM computation completed successfully." << endl;
     cout << "Max Diff (cuBLAS):" << torch::abs(C - ans).max().item<float>() << endl;
@@ -43,7 +43,7 @@ void validate_gemm(int repeat = 10)
                                { cute_sgemm_v1(A_ptr, B_ptr, C_ptr, M, N, K); });
 
     auto cublas_gflops = benchmark(repeat, M, N, K, [&]()
-                                 { cublas_sgemm(A_ptr, B_ptr, C_ptr, M, N, K); });
+                                 { cublas_sgemm(handle, A_ptr, B_ptr, C_ptr, M, N, K); });
 
     cout << "CUTE SGEMM:  " << cute_gflops << " GFLOPS" << endl;
     cout << "cuBLAS SGEMM: " << cublas_gflops << "GFLOPS" << endl;
@@ -52,8 +52,9 @@ void validate_gemm(int repeat = 10)
 
 int main()
 {
+    cublasHandle_t handle;
     cublasCreate(&handle);
-    validate_gemm();
+    validate_gemm(handle);
     cublasDestroy(handle);
     return 0;
 }

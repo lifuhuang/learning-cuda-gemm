@@ -1,3 +1,7 @@
+#include "cute_sgemm_v1.hpp"
+#include "utils.hpp"
+#include <cute/tensor.hpp>
+
 template <class TA, class TB, class TC, class CtaTiler, class ALayout, class ASmemLayout, class AThreadLayout,
           class BLayout, class BSmemLayout, class BThreadLayout,
           class CLayout, class CSmemLayout, class CThreadLayout>
