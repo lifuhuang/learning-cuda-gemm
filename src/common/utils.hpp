@@ -29,22 +29,3 @@ struct Event {
   Event& operator=(const Event&) = delete;
   Event(Event&& o) noexcept : e(o.e) { o.e = nullptr; }
 };
-
-inline float benchmark(int repeat, int M, int N, int K,
-                       const std::function<void()>& work,
-                       bool print_each = false) {
-  Event begin, end;
-  float gflops = 0.0f;
-  work(); CUDA_CHECK(cudaDeviceSynchronize()); // warmup
-  for (int i = 0; i < repeat; ++i) {
-    CUDA_CHECK(cudaEventRecord(begin.e));
-    work();
-    CUDA_CHECK(cudaEventRecord(end.e));
-    CUDA_CHECK(cudaEventSynchronize(end.e));
-    float ms = 0.f;
-    CUDA_CHECK(cudaEventElapsedTime(&ms, begin.e, end.e));
-    gflops += 2.0f * M * N * K / 1e6f / ms;
-    if (print_each) std::cout << "Iteration " << i << ": " << ms << " ms\n";
-  }
-  return gflops / repeat;
-}

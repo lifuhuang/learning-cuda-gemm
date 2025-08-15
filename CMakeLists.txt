@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.23)
 
 # Set CUDA architecture (adjust as needed)
-set(CMAKE_CUDA_ARCHITECTURES 90)
+set(CMAKE_CUDA_ARCHITECTURES "90")
 
 project(HelloGEMM LANGUAGES CXX CUDA)
 
@@ -12,6 +12,9 @@ set(CMAKE_CUDA_STANDARD 17)
 set(CMAKE_CUDA_STANDARD_REQUIRED ON)
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${TORCH_CXX_FLAGS}")
+
+# Keep runtime path to libtorch in both Debug and Release
+set(CMAKE_BUILD_RPATH_USE_ORIGIN TRUE)
 
 # Packages
 find_package(CUDAToolkit REQUIRED) 
@@ -25,7 +28,9 @@ target_include_directories(common_utils_headers INTERFACE
 
 # Add subprojects
 add_subdirectory(src/cublas_sgemm)
-add_subdirectory(src/cute_sgemm_v1)
+add_subdirectory(src/cute_gemm_v1)
+add_subdirectory(src/cute_gemm_v2)
+# add_subdirectory(src/cute_sgemm_v3)
 
 # Create the executable
 add_executable(hello_gemm apps/main.cu)
@@ -33,5 +38,7 @@ target_include_directories(hello_gemm PRIVATE ${CUDAToolkit_INCLUDE_DIRS})
 target_link_libraries(hello_gemm PRIVATE 
     "${TORCH_LIBRARIES}" 
     cublas_sgemm 
-    cute_sgemm_v1
+    cute_gemm_v1
+    cute_gemm_v2
+    # cute_sgemm_v3
     common_utils_headers)

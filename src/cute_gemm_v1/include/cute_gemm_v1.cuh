@@ -1,14 +1,15 @@
-#include "cute_sgemm_v1.hpp"
 #include "utils.hpp"
 #include <cute/tensor.hpp>
 
 template <class TA, class TB, class TC, class CtaTiler, class ALayout, class ASmemLayout, class AThreadLayout,
           class BLayout, class BSmemLayout, class BThreadLayout,
-          class CLayout, class CSmemLayout, class CThreadLayout>
+          class CLayout, class CSmemLayout, class CThreadLayout,
+          class Alpha, class Beta>
 __global__ void gemm_kernel_v1(CtaTiler cta_tiler,
                             TA *A, ALayout layout_A, ASmemLayout layout_sA, AThreadLayout tA,
                             TB *B, BLayout layout_B, BSmemLayout layout_sB, BThreadLayout tB,
-                            TC *C, CLayout layout_C, CSmemLayout, CThreadLayout tC)
+                            TC *C, CLayout layout_C, CSmemLayout, CThreadLayout tC,
+                            Alpha alpha, Beta beta)
 {
     using namespace cute;
     static_assert(is_static<ASmemLayout>::value, "ASmemLayout must be static");
@@ -98,16 +99,12 @@ __global__ void gemm_kernel_v1(CtaTiler cta_tiler,
         __syncthreads();
     }
 
-    copy(tCrC, tCgC);
-    cp_async_fence();
-    cp_async_wait<0>();
-    __syncthreads();
-
+    axpby(alpha, tCrC, beta, tCgC);
     return;
 }
 
-
-void cute_sgemm_v1(const float *A, const float *B, float *C, int M, int N, int K)
+template <class TA, class TB, class TC, class Alpha, class Beta>
+void cute_gemm_v1(TA *A, TB *B, TC *C, int M, int N, int K, Alpha alpha, Beta beta)
 {
     using namespace cute;
 
@@ -136,5 +133,8 @@ void cute_sgemm_v1(const float *A, const float *B, float *C, int M, int N, int K
         cta_tiler,
         A, layout_A, layout_sA, tA,
         B, layout_B, layout_sB, tB,
-        C, layout_C, layout_sC, tC);
+        C, layout_C, layout_sC, tC, 
+        alpha, beta);
 }
+
+extern template void cute_gemm_v1<float, float, float, float, float>(float *A, float *B, float *C, int M, int N, int K, float alpha, float beta);
