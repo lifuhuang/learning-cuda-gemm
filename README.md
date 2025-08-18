@@ -10,24 +10,31 @@
 # Iterations
 ### Baseline: cuBLAS
 
-### CUTE_v1 (65.61% baseline)
+## CUTE_v1 (65.61% baseline)
 Most naive GEMM implemented from CuTE tutorial without any MMA or copy optimizations. Largely based on the example from [CuTe official doc](https://docs.nvidia.com/cutlass/media/docs/cpp/cute/0x_gemm_tutorial.html#sgemm-1-cu)
 
-### CUTE_v2 (88.35% baseline)
-CUTE_v1 solution + Universal Copy + MMA Atoms
+## CUTE_v2 (88.35% baseline)
+CUTE_v1 solution + Universal Copy + UniversalFMA 
 
-Ablation study - what made it faster?
-By tweaking different part of the code, I found out that the improvement is almost solely coming from the copy instructions (specified as template parameter in UniversalCopy):
+### Ablation study - what made it faster?
 
+TL;DR: it's a combination of SIMD inst (128-bit) and software pipelining.
+
+- **SIMD instructions**
 ```
-CUTE_v1 SGEMM:  29509.4 GFLOPS
-CUTE_v1 / cuBLAS: 65.609 %
-CUTE_v2 SGEMM:  39751 GFLOPS
-CUTE_v2 / cuBLAS: 88.3795 %
-CUTE_v2 (64-bit) SGEMM:  29557.9 GFLOPS
-CUTE_v2 (64-bit) / cuBLAS: 65.7169 %
-CUTE_v2 (32-bit) SGEMM:  28744 GFLOPS
-CUTE_v2 (32-bit) / cuBLAS: 63.9075 %
+cuBLAS SGEMM: 44856.8GFLOPS
+
+CUTE_v1 SGEMM:  29495 GFLOPS
+CUTE_v1 / cuBLAS: 65.7536 %
+
+CUTE_v2 (128-bit) SGEMM:  39840.9 GFLOPS
+CUTE_v2 (128-bit) / cuBLAS: 88.818 %
+
+CUTE_v2 (64-bit) SGEMM:  29749.6 GFLOPS
+CUTE_v2 (64-bit) / cuBLAS: 66.3211 %
+
+CUTE_v2 (32-bit) SGEMM:  28914.3 GFLOPS
+CUTE_v2 (32-bit) / cuBLAS: 64.4591 %
 ```
 As demonstrated above, when changing the copy instruction to 64-bit and 32-bit, the GFlops dropped to 65.7% and 63.9% respectively. 
 
@@ -86,6 +93,24 @@ Looking into PTX code, I can see different instructions are generated:
 	st.shared.f32 	[%r13+256], %f330;
 	ld.global.f32 	%f331, [%rd20+384];
 	st.shared.f32 	[%r13+384], %f331;
+```
+
+- **Software Pipelining**
+
+```
+w/o software pipelining
+
+CUTE_v1 SGEMM:  29491.2 GFLOPS
+CUTE_v1 / cuBLAS: 65.7418 %
+
+CUTE_v2 (128-bit) SGEMM:  29431 GFLOPS
+CUTE_v2 (128-bit) / cuBLAS: 65.6077 %
+
+CUTE_v2 (64-bit) SGEMM:  30574 GFLOPS
+CUTE_v2 (64-bit) / cuBLAS: 68.1558 %
+
+CUTE_v2 (32-bit) SGEMM:  28603.2 GFLOPS
+CUTE_v2 (32-bit) / cuBLAS: 63.7624 %
 ```
 
 [WIP]

@@ -5,12 +5,12 @@
 
 template <class TA, class TB, class TC, class CtaTiler, class ALayout, class ASmemLayout, class TiledCopyA,
           class BLayout, class BSmemLayout, class TiledCopyB,
-          class CLayout, class CSmemLayout, class CThreadLayout,
+          class CLayout, class CSmemLayout, class TiledMma,
           class Alpha, class Beta>
 __global__ void gemm_kernel_v2(CtaTiler cta_tiler,
                             TA *A, ALayout layout_A, ASmemLayout layout_sA, TiledCopyA copy_A,
                             TB *B, BLayout layout_B, BSmemLayout layout_sB, TiledCopyB copy_B,
-                            TC *C, CLayout layout_C, CSmemLayout, CThreadLayout tC,
+                            TC *C, CLayout layout_C, CSmemLayout, TiledMma mma,
                             Alpha alpha, Beta beta)
 {
     using namespace cute;
@@ -53,45 +53,29 @@ __global__ void gemm_kernel_v2(CtaTiler cta_tiler,
     Tensor tAsA = thr_layout_A.partition_D(sA);
     Tensor tArA = make_fragment_like(tAsA);
 
+    // auto tAgA = local_partition(gA, tA, tid);
+    // auto tAsA = local_partition(sA, tA, tid);
+    // auto tBgB = local_partition(gB, tB, tid);
+    // auto tBsB = local_partition(sB, tB, tid);
+
     ThrCopy thr_layout_B = copy_B.get_slice(tid);
     Tensor tBgB = thr_layout_B.partition_S(gB);
     Tensor tBsB = thr_layout_B.partition_D(sB);
     Tensor tBrB = make_fragment_like(tBsB);
-
     copy(copy_A, tAgA(_, _, _, 0), tArA);
     copy(copy_B, tBgB(_, _, _, 0), tBrB);
 
-    // auto tAgA = local_partition(gA, tA, tid);
-    // auto tAsA = local_partition(sA, tA, tid);
+    // auto tCsA = local_partition(sA, tC, tid, Step<_1, X>{});
+    // auto tCsB = local_partition(sB, tC, tid, Step<X, _1>{});
+    // auto tCgC = local_partition(gC, tC, tid);
+    // auto tCrC = make_tensor_like(tCgC);
 
-    // auto tBgB = local_partition(gB, tB, tid);
-    // auto tBsB = local_partition(sB, tB, tid);
-
-    auto tCgC = local_partition(gC, tC, tid);
-    auto tCrC = make_tensor_like(tCgC);
+    ThrMMA thr_layout_C = mma.get_slice(tid);
+    Tensor tCsA = thr_layout_C.partition_A(sA);
+    Tensor tCsB = thr_layout_C.partition_B(sB);
+    Tensor tCgC = thr_layout_C.partition_C(gC);
+    auto tCrC = make_fragment_like(tCgC);
     clear(tCrC);
-
-    auto tCsA = local_partition(sA, tC, tid, Step<_1, X>{});
-    auto tCsB = local_partition(sB, tC, tid, Step<X, _1>{});
-
-    // if(thread0()) {
-    //     print("  mA : "); print(  mA); print("\n");
-    //     print("  gA : "); print(  gA); print("\n");
-    //     print("  sA : "); print(  sA); print("\n");
-    //     print("tAgA : "); print(tAgA); print("\n");
-    //     print("tAsA : "); print(tAsA); print("\n");
-    //     print("  mB : "); print(  mB); print("\n");
-    //     print("  gB : "); print(  gB); print("\n");
-    //     print("  sB : "); print(  sB); print("\n");
-    //     print("tBgB : "); print(tBgB); print("\n");
-    //     print("tBsB : "); print(tBsB); print("\n");
-    //     print("  mC : "); print(  mC); print("\n");
-    //     print("  gC : "); print(  gC); print("\n");
-    //     print("tCsA : "); print(tCsA); print("\n");
-    //     print("tCsB : "); print(tCsB); print("\n");
-    //     print("tCgC : "); print(tCgC); print("\n");
-    //     print("tCrC : "); print(tCrC); print("\n");
-    // }
 
     auto K_TILE_MAX = size<3>(tAgA);
     for (int k = 0; k < K_TILE_MAX; ++k)
@@ -104,7 +88,7 @@ __global__ void gemm_kernel_v2(CtaTiler cta_tiler,
         copy(copy_A, tAgA(_, _, _, next_k), tArA);
         copy(copy_B, tBgB(_, _, _, next_k), tBrB);
 
-        gemm(tCsA, tCsB, tCrC);
+        gemm(mma, tCsA, tCsB, tCrC);
         __syncthreads();
     }
 
@@ -141,15 +125,16 @@ void cute_gemm_v2(TA *A, TB *B, TC *C, int M, int N, int K, Alpha alpha, Beta be
     auto copy_A = make_tiled_copy(Copy_Atom<UniversalCopy<CopyT>, TA>{}, thr_layout_A, val_layout_A);
     auto copy_B = make_tiled_copy(Copy_Atom<UniversalCopy<CopyT>, TB>{}, thr_layout_B, val_layout_B);
 
-    auto tC = make_layout(make_shape(Int<16>{}, Int<16>{}));
+    auto thr_layout_C = make_layout(make_shape(Int<16>{}, Int<16>{}, Int<1>{}));
+    auto mma = make_tiled_mma(UniversalFMA<TC, TA, TB>{}, thr_layout_C);
 
-    dim3 blockDim(size(tC));
+    dim3 blockDim(size(mma));
     dim3 gridDim(cdiv(M, bM), cdiv(N, bN));
     gemm_kernel_v2<<<gridDim, blockDim>>>(
         cta_tiler,
         A, layout_A, layout_sA, copy_A,
         B, layout_B, layout_sB, copy_B,
-        C, layout_C, layout_sC, tC, 
+        C, layout_C, layout_sC, mma,
         alpha, beta);
 }
 
