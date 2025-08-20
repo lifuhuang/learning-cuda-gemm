@@ -10,8 +10,8 @@ template <class TA, class TB, class TC, class CtaTiler, class ALayout, class ASm
 __global__ static
 __launch_bounds__(decltype(size(TiledMma{}))::value) 
 void gemm_kernel_v2(CtaTiler cta_tiler,
-                    TA *A, ALayout layout_A, ASmemLayout layout_sA, TiledCopyA copy_A,
-                    TB *B, BLayout layout_B, BSmemLayout layout_sB, TiledCopyB copy_B,
+                    const TA *A, ALayout layout_A, ASmemLayout layout_sA, TiledCopyA copy_A,
+                    const TB *B, BLayout layout_B, BSmemLayout layout_sB, TiledCopyB copy_B,
                     TC *C, CLayout layout_C, CSmemLayout, TiledMma mma,
                     Alpha alpha, Beta beta)
 {

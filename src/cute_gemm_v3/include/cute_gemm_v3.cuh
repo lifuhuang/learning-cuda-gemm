@@ -10,8 +10,8 @@ template <class TA, class TB, class TC, class CtaTiler, class ALayout, class ASm
 __global__ static 
 __launch_bounds__(decltype(size(TiledMma{}))::value)
 void gemm_kernel_v3(CtaTiler cta_tiler,
-                    TA *A, ALayout layout_A, ASmemLayout layout_sA, TiledCopyA copy_A,
-                    TB *B, BLayout layout_B, BSmemLayout layout_sB, TiledCopyB copy_B,
+                    const TA *A, ALayout layout_A, ASmemLayout layout_sA, TiledCopyA copy_A,
+                    const TB *B, BLayout layout_B, BSmemLayout layout_sB, TiledCopyB copy_B,
                     TC *C, CLayout layout_C, CSmemLayout, TiledMma mma,
                     Alpha alpha, Beta beta)
 {
@@ -88,7 +88,7 @@ void gemm_kernel_v3(CtaTiler cta_tiler,
     CUTE_NO_UNROLL
     for (int k_tile = 0; k_tile < K_TILE_MAX; ++k_tile)
     {
-        // CUTE_UNROLL
+        CUTE_UNROLL
         for (int k_block = 0; k_block < K_BLOCK_MAX; ++k_block)
         {
             if (k_block == K_BLOCK_MAX - 1)

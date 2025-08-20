@@ -8,8 +8,8 @@ template <class TA, class TB, class TC, class CtaTiler, class ALayout, class ASm
 
 __global__ static __launch_bounds__(decltype(size(CThreadLayout{}))::value) 
 void gemm_kernel_v1(CtaTiler cta_tiler,
-                    TA *A, ALayout layout_A, ASmemLayout layout_sA, AThreadLayout tA,
-                    TB *B, BLayout layout_B, BSmemLayout layout_sB, BThreadLayout tB,
+                    const TA *A, ALayout layout_A, ASmemLayout layout_sA, AThreadLayout tA,
+                    const TB *B, BLayout layout_B, BSmemLayout layout_sB, BThreadLayout tB,
                     TC *C, CLayout layout_C, CSmemLayout, CThreadLayout tC,
                     Alpha alpha, Beta beta)
 {
