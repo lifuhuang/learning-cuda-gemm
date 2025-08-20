@@ -7,9 +7,9 @@ template <class TA, class TB, class TC, class CtaTiler, class ALayout, class ASm
           class BLayout, class BSmemLayout, class TiledCopyB,
           class CLayout, class CSmemLayout, class TiledMma,
           class Alpha, class Beta>
-__global__ static
-__launch_bounds__(decltype(size(TiledMma{}))::value) 
-void gemm_kernel_v2(CtaTiler cta_tiler,
+__global__ static 
+__launch_bounds__(decltype(size(TiledMma{}))::value)
+void gemm_kernel_v3(CtaTiler cta_tiler,
                     TA *A, ALayout layout_A, ASmemLayout layout_sA, TiledCopyA copy_A,
                     TB *B, BLayout layout_B, BSmemLayout layout_sB, TiledCopyB copy_B,
                     TC *C, CLayout layout_C, CSmemLayout, TiledMma mma,
@@ -29,7 +29,6 @@ void gemm_kernel_v2(CtaTiler cta_tiler,
     CUTE_STATIC_ASSERT_V(size<2>(cta_tiler) == size<1>(layout_sA));
     CUTE_STATIC_ASSERT_V(size<2>(cta_tiler) == size<1>(layout_sB));
     CUTE_STATIC_ASSERT_V(size<1>(cta_tiler) == size<1>(CSmemLayout{}));
-
 
     int tid = threadIdx.x;
 
@@ -55,67 +54,71 @@ void gemm_kernel_v2(CtaTiler cta_tiler,
     Tensor tAsA = thr_layout_A.partition_D(sA);
     Tensor tArA = make_fragment_like(tAsA);
 
-    // auto tAgA = local_partition(gA, tA, tid);
-    // auto tAsA = local_partition(sA, tA, tid);
-    // auto tBgB = local_partition(gB, tB, tid);
-    // auto tBsB = local_partition(sB, tB, tid);
-
     ThrCopy thr_layout_B = copy_B.get_slice(tid);
     Tensor tBgB = thr_layout_B.partition_S(gB);
     Tensor tBsB = thr_layout_B.partition_D(sB);
     Tensor tBrB = make_fragment_like(tBsB);
+
+    // Pre-fetch: G -> R
     copy(copy_A, tAgA(_, _, _, 0), tArA);
     copy(copy_B, tBgB(_, _, _, 0), tBrB);
 
-    // auto tCsA = local_partition(sA, tC, tid, Step<_1, X>{});
-    // auto tCsB = local_partition(sB, tC, tid, Step<X, _1>{});
-    // auto tCgC = local_partition(gC, tC, tid);
-    // auto tCrC = make_tensor_like(tCgC);
+    // R -> S
+    copy(tArA, tAsA);
+    copy(tBrB, tBsB);
+    __syncthreads();
 
     ThrMMA thr_layout_C = mma.get_slice(tid);
     Tensor tCsA = thr_layout_C.partition_A(sA);
     Tensor tCsB = thr_layout_C.partition_B(sB);
     Tensor tCgC = thr_layout_C.partition_C(gC);
-    auto tCrC = make_fragment_like(tCgC);
+
+    Tensor tCrA = thr_layout_C.make_fragment_A(tCsA);
+    Tensor tCrB = thr_layout_C.make_fragment_B(tCsB);
+    Tensor tCrC = thr_layout_C.make_fragment_C(tCgC);
+
+    // Pre-fetch: S -> R
+    copy(tCsA(_, _, _0{}), tCrA(_, _, _0{}));
+    copy(tCsB(_, _, _0{}), tCrB(_, _, _0{}));
     clear(tCrC);
 
-    // if (thread0()) {
-    //     print("tAgA: "); print(tAgA); print("\n");
-    //     print("tArA: "); print(tArA); print("\n");
-    //     print("tAsA: "); print(tAsA); print("\n");
-    //     print("tCsA: "); print(tCsA); print("\n");
-
-    //     print("tBgB: "); print(tBgB); print("\n");
-    //     print("tBrB: "); print(tBrB); print("\n");
-    //     print("tBsB: "); print(tBsB); print("\n");
-    //     print("tCsB: "); print(tCsB); print("\n");
-
-    //     print("tCgC: "); print(tCgC); print("\n");
-    //     print("tCrC: "); print(tCrC); print("\n");
-    // }
-
     auto K_TILE_MAX = size<3>(tAgA);
-    for (int k = 0; k < K_TILE_MAX; ++k)
+    auto K_BLOCK_MAX = size<2>(tCrA);
+
+    CUTE_NO_UNROLL
+    for (int k_tile = 0; k_tile < K_TILE_MAX; ++k_tile)
     {
-        copy(tArA, tAsA);
-        copy(tBrB, tBsB);
-        __syncthreads();
+        // CUTE_UNROLL
+        for (int k_block = 0; k_block < K_BLOCK_MAX; ++k_block)
+        {
+            if (k_block == K_BLOCK_MAX - 1)
+            {
+                __syncthreads();
+                copy(tArA, tAsA);
+                copy(tBrB, tBsB);
+                __syncthreads();
+            }
 
-        auto next_k = k + 1 < K_TILE_MAX ? k + 1 : k;
-        copy(copy_A, tAgA(_, _, _, next_k), tArA);
-        copy(copy_B, tBgB(_, _, _, next_k), tBrB);
+            auto next_k_block = (k_block + 1) % K_BLOCK_MAX;
+            copy(tCsA(_, _, next_k_block), tCrA(_, _, next_k_block));
+            copy(tCsB(_, _, next_k_block), tCrB(_, _, next_k_block));
 
-        gemm(mma, tCsA, tCsB, tCrC);
-        __syncthreads();
+            if (k_block == 0) {
+                auto next_k_tile = k_tile + 1 < K_TILE_MAX ? k_tile + 1 : k_tile;
+                copy(copy_A, tAgA(_, _, _, next_k_tile), tArA);
+                copy(copy_B, tBgB(_, _, _, next_k_tile), tBrB);
+            }
+
+            gemm(mma, tCrA(_, _, k_block), tCrB(_, _, k_block), tCrC);
+        }
     }
 
     axpby(alpha, tCrC, beta, tCgC);
     return;
 }
 
-
 template <class TA, class TB, class TC, class Alpha, class Beta, class CopyT = cutlass::uint128_t>
-void cute_gemm_v2(TA *A, TB *B, TC *C, int M, int N, int K, Alpha alpha, Beta beta)
+void cute_gemm_v3(TA *A, TB *B, TC *C, int M, int N, int K, Alpha alpha, Beta beta)
 {
     using namespace cute;
 
@@ -147,7 +150,7 @@ void cute_gemm_v2(TA *A, TB *B, TC *C, int M, int N, int K, Alpha alpha, Beta be
 
     dim3 blockDim(size(mma));
     dim3 gridDim(cdiv(M, bM), cdiv(N, bN));
-    gemm_kernel_v2<<<gridDim, blockDim>>>(
+    gemm_kernel_v3<<<gridDim, blockDim>>>(
         cta_tiler,
         A, layout_A, layout_sA, copy_A,
         B, layout_B, layout_sB, copy_B,
@@ -155,4 +158,4 @@ void cute_gemm_v2(TA *A, TB *B, TC *C, int M, int N, int K, Alpha alpha, Beta be
         alpha, beta);
 }
 
-extern template void cute_gemm_v2<float, float, float, float, float, cutlass::uint128_t>(float *A, float *B, float *C, int M, int N, int K, float alpha, float beta);
+extern template void cute_gemm_v3<float, float, float, float, float, cutlass::uint128_t>(float *A, float *B, float *C, int M, int N, int K, float alpha, float beta);

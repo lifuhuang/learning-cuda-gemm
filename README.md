@@ -6,6 +6,7 @@
 | **cuBLAS** | 44978.2 | 100.0% |
 | **CUTE_v1** | 29508.5 | 65.61% |
 | **CUTE_v2** | 39739.9 | 88.35% |
+| **CUTE_v3** | 36989.1 | 82.43% |
 
 # Iterations
 ### Baseline: cuBLAS
@@ -111,6 +112,19 @@ CUTE_v2 (64-bit) / cuBLAS: 68.1558 %
 
 CUTE_v2 (32-bit) SGEMM:  28603.2 GFLOPS
 CUTE_v2 (32-bit) / cuBLAS: 63.7624 %
+```
+
+## CUTE_v3 (82.43 % baseline)
+This is essentially the sgemm_sm70.cu program in CuTe tutorial. I tested it on my H100 VM, and the additional software pipelining ends up making the perf worse.
+```
+CUTE_v3 SGEMM:  36986.3 GFLOPS
+CUTE_v3 / cuBLAS: 82.427 %
+```
+
+That being said, one interesting observation is that the `CUTE_UNROLL` hint **significantly** affects the perf. When commenting out this hint, GFLOPS dropped to only a fraction of what it was:
+```
+CUTE_v3 SGEMM:  7821.13 GFLOPS
+CUTE_v3 / cuBLAS: 17.4292 %
 ```
 
 [WIP]

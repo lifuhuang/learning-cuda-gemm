@@ -5,11 +5,13 @@ template <class TA, class TB, class TC, class CtaTiler, class ALayout, class ASm
           class BLayout, class BSmemLayout, class BThreadLayout,
           class CLayout, class CSmemLayout, class CThreadLayout,
           class Alpha, class Beta>
-__global__ void gemm_kernel_v1(CtaTiler cta_tiler,
-                            TA *A, ALayout layout_A, ASmemLayout layout_sA, AThreadLayout tA,
-                            TB *B, BLayout layout_B, BSmemLayout layout_sB, BThreadLayout tB,
-                            TC *C, CLayout layout_C, CSmemLayout, CThreadLayout tC,
-                            Alpha alpha, Beta beta)
+
+__global__ static __launch_bounds__(decltype(size(CThreadLayout{}))::value) 
+void gemm_kernel_v1(CtaTiler cta_tiler,
+                    TA *A, ALayout layout_A, ASmemLayout layout_sA, AThreadLayout tA,
+                    TB *B, BLayout layout_B, BSmemLayout layout_sB, BThreadLayout tB,
+                    TC *C, CLayout layout_C, CSmemLayout, CThreadLayout tC,
+                    Alpha alpha, Beta beta)
 {
     using namespace cute;
     static_assert(is_static<ASmemLayout>::value, "ASmemLayout must be static");
@@ -108,9 +110,9 @@ void cute_gemm_v1(TA *A, TB *B, TC *C, int M, int N, int K, Alpha alpha, Beta be
 {
     using namespace cute;
 
-    auto bM = Int<128>{};
-    auto bN = Int<128>{};
-    auto bK = Int<8>{};
+    auto bM = _128{};
+    auto bN = _128{};
+    auto bK = _8{};
 
     auto MNK = make_shape(M, N, K);
     auto cta_tiler = make_shape(bM, bN, bK);
@@ -123,9 +125,9 @@ void cute_gemm_v1(TA *A, TB *B, TC *C, int M, int N, int K, Alpha alpha, Beta be
     auto layout_sB = make_layout(select<1, 2>(cta_tiler));
     auto layout_sC = make_layout(select<0, 1>(cta_tiler));
 
-    auto tA = make_layout(make_shape(Int<32>{}, Int<8>{}));
-    auto tB = make_layout(make_shape(Int<32>{}, Int<8>{}));
-    auto tC = make_layout(make_shape(Int<16>{}, Int<16>{}));
+    auto tA = make_layout(make_shape(_32{}, _8{}));
+    auto tB = make_layout(make_shape(_32{}, _8{}));
+    auto tC = make_layout(make_shape(_16{}, _16{}));
 
     dim3 blockDim(size(tC));
     dim3 gridDim(cdiv(M, bM), cdiv(N, bN));
@@ -133,7 +135,7 @@ void cute_gemm_v1(TA *A, TB *B, TC *C, int M, int N, int K, Alpha alpha, Beta be
         cta_tiler,
         A, layout_A, layout_sA, tA,
         B, layout_B, layout_sB, tB,
-        C, layout_C, layout_sC, tC, 
+        C, layout_C, layout_sC, tC,
         alpha, beta);
 }
 

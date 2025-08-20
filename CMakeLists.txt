@@ -30,7 +30,7 @@ target_include_directories(common_utils_headers INTERFACE
 add_subdirectory(src/cublas_sgemm)
 add_subdirectory(src/cute_gemm_v1)
 add_subdirectory(src/cute_gemm_v2)
-# add_subdirectory(src/cute_sgemm_v3)
+add_subdirectory(src/cute_gemm_v3)
 
 # Create the executable
 add_executable(hello_gemm apps/main.cu)
@@ -40,5 +40,5 @@ target_link_libraries(hello_gemm PRIVATE
     cublas_sgemm 
     cute_gemm_v1
     cute_gemm_v2
-    # cute_sgemm_v3
+    cute_gemm_v3
     common_utils_headers)

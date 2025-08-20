@@ -4,7 +4,7 @@
 #include "cublas_sgemm.hpp"
 #include "cute_gemm_v1.cuh"
 #include "cute_gemm_v2.cuh"
-// #include "cute_gemm_v3.cuh"
+#include "cute_gemm_v3.cuh"
 #include "utils.hpp"
 
 struct Noop
@@ -91,6 +91,11 @@ void run_benchmark(cublasHandle_t handle, int repeat = 10)
                                     { cute_gemm_v2(A_ptr, B_ptr, C_ptr, M, N, K, alpha, beta); }, prolog, epilog);
     cout << "CUTE_v2 SGEMM:  " << cute_v2_gflops << " GFLOPS" << endl;
     cout << "CUTE_v2 / cuBLAS: " << (cute_v2_gflops / cublas_gflops) * 100.0f << " %" << endl << endl;
+
+    auto cute_v3_gflops = benchmark(repeat, M, N, K, [&]()
+                                    { cute_gemm_v3(A_ptr, B_ptr, C_ptr, M, N, K, alpha, beta); }, prolog, epilog);
+    cout << "CUTE_v3 SGEMM:  " << cute_v3_gflops << " GFLOPS" << endl;
+    cout << "CUTE_v3 / cuBLAS: " << (cute_v3_gflops / cublas_gflops) * 100.0f << " %" << endl << endl;
 }
 
 int main()
