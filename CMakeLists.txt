@@ -12,6 +12,7 @@ set(CMAKE_CUDA_STANDARD 17)
 set(CMAKE_CUDA_STANDARD_REQUIRED ON)
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${TORCH_CXX_FLAGS}")
+set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -lineinfo")
 
 # Keep runtime path to libtorch in both Debug and Release
 set(CMAKE_BUILD_RPATH_USE_ORIGIN TRUE)
@@ -31,6 +32,7 @@ add_subdirectory(src/cublas_sgemm)
 add_subdirectory(src/cute_gemm_v1)
 add_subdirectory(src/cute_gemm_v2)
 add_subdirectory(src/cute_gemm_v3)
+add_subdirectory(src/cute_gemm_v4)
 
 # Create the executable
 add_executable(hello_gemm apps/main.cu)
@@ -41,4 +43,5 @@ target_link_libraries(hello_gemm PRIVATE
     cute_gemm_v1
     cute_gemm_v2
     cute_gemm_v3
+    cute_gemm_v4
     common_utils_headers)

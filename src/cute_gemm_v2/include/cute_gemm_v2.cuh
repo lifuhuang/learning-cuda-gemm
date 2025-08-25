@@ -3,15 +3,15 @@
 #include <cute/atom/copy_atom.hpp>
 #include <cutlass/uint128.h>
 
-template <class TA, class TB, class TC, class CtaTiler, class ALayout, class ASmemLayout, class TiledCopyA,
-          class BLayout, class BSmemLayout, class TiledCopyB,
+template <class TA, class TB, class TC, class CtaTiler, class ALayout, class ASmemLayout, class G2SCopyA,
+          class BLayout, class BSmemLayout, class G2SCopyB,
           class CLayout, class CSmemLayout, class TiledMma,
           class Alpha, class Beta>
 __global__ static
 __launch_bounds__(decltype(size(TiledMma{}))::value) 
 void gemm_kernel_v2(CtaTiler cta_tiler,
-                    const TA *A, ALayout layout_A, ASmemLayout layout_sA, TiledCopyA copy_A,
-                    const TB *B, BLayout layout_B, BSmemLayout layout_sB, TiledCopyB copy_B,
+                    const TA *A, ALayout layout_A, ASmemLayout layout_sA, G2SCopyA copy_A,
+                    const TB *B, BLayout layout_B, BSmemLayout layout_sB, G2SCopyB copy_B,
                     TC *C, CLayout layout_C, CSmemLayout, TiledMma mma,
                     Alpha alpha, Beta beta)
 {
