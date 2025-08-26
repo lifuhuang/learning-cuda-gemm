@@ -3,24 +3,23 @@
 #include <cute/atom/copy_atom.hpp>
 #include <cutlass/uint128.h>
 
-template<class TA, class LayoutA, class TB, class LayoutB>
-struct SharedStorage {
+template <class TA, class LayoutA, class TB, class LayoutB>
+struct SharedStorage
+{
     cute::ArrayEngine<TA, cute::cosize_v<LayoutA>> A;
     cute::ArrayEngine<TB, cute::cosize_v<LayoutB>> B;
 };
 
-template <class TA, class TB, class TC, class CtaTiler, 
+template <class TA, class TB, class TC, class CtaTiler,
           class ALayout, class ASmemLayout, class G2SCopyA, class S2RCopyAtomA,
           class BLayout, class BSmemLayout, class G2SCopyB, class S2RCopyAtomB,
           class CLayout, class TiledMma,
           class Alpha, class Beta>
-__global__ static 
-__launch_bounds__(decltype(size(TiledMma{}))::value)
-void gemm_kernel_v4(CtaTiler cta_tiler,
-                    const TA *A, ALayout layout_A, ASmemLayout layout_sA, G2SCopyA g2s_copy_A, S2RCopyAtomA s2r_copy_atom_A,
-                    const TB *B, BLayout layout_B, BSmemLayout layout_sB, G2SCopyB g2s_copy_B, S2RCopyAtomB s2r_copy_atom_B,
-                    TC *C, CLayout layout_C, TiledMma mma,
-                    Alpha alpha, Beta beta)
+__global__ static __launch_bounds__(decltype(size(TiledMma{}))::value) void gemm_kernel_v4(CtaTiler cta_tiler,
+                                                                                           const TA *A, ALayout layout_A, ASmemLayout layout_sA, G2SCopyA g2s_copy_A, S2RCopyAtomA s2r_copy_atom_A,
+                                                                                           const TB *B, BLayout layout_B, BSmemLayout layout_sB, G2SCopyB g2s_copy_B, S2RCopyAtomB s2r_copy_atom_B,
+                                                                                           TC *C, CLayout layout_C, TiledMma mma,
+                                                                                           Alpha alpha, Beta beta)
 {
     using namespace cute;
     static_assert(is_static<ASmemLayout>::value, "ASmemLayout must be static");
@@ -52,10 +51,10 @@ void gemm_kernel_v4(CtaTiler cta_tiler,
     // Tensor sB = make_tensor(make_smem_ptr(smemB), layout_sB);
 
     extern __shared__ char smem[]; // Allocate shared memory dynamically
-    SharedStorage<TA, ASmemLayout, TB, BSmemLayout>& shared = *reinterpret_cast<SharedStorage<TA, ASmemLayout, TB, BSmemLayout>*>(smem);
+    SharedStorage<TA, ASmemLayout, TB, BSmemLayout> &shared = *reinterpret_cast<SharedStorage<TA, ASmemLayout, TB, BSmemLayout> *>(smem);
     Tensor sA = make_tensor(make_smem_ptr(shared.A.begin()), layout_sA); // (bM, bK, PIPE)
     Tensor sB = make_tensor(make_smem_ptr(shared.B.begin()), layout_sB); // (bN, bK, PIPE)
-    constexpr auto N_PIPES = size<2>(layout_sA); // Number of pipeline stages
+    constexpr auto N_PIPES = size<2>(layout_sA);                         // Number of pipeline stages
 
     // Global -> Shared
     ThrCopy thr_g2s_A = g2s_copy_A.get_slice(tid);
@@ -74,12 +73,12 @@ void gemm_kernel_v4(CtaTiler cta_tiler,
     auto s2r_copy_A = make_tiled_copy_A(s2r_copy_atom_A, mma);
     ThrCopy thr_s2r_A = s2r_copy_A.get_slice(tid);
     Tensor tXsA = thr_s2r_A.partition_S(sA); // (CPY, MMA_M, MMA_K, PIPE)
-    Tensor tXrA = thr_s2r_A.retile_D(tCrA); // (CPY, MMA_M, MMA_K)
+    Tensor tXrA = thr_s2r_A.retile_D(tCrA);  // (CPY, MMA_M, MMA_K)
 
     auto s2r_copy_B = make_tiled_copy_B(s2r_copy_atom_B, mma);
     ThrCopy thr_s2r_B = s2r_copy_B.get_slice(tid);
     Tensor tXsB = thr_s2r_B.partition_S(sB); // (CPY, MMA_N, MMA_K, PIPE)
-    Tensor tXrB = thr_s2r_B.retile_D(tCrB); // (CPY, MMA_N, MMA_K)
+    Tensor tXrB = thr_s2r_B.retile_D(tCrB);  // (CPY, MMA_N, MMA_K)
 
     // // Pre-fetch: S -> R
     // __syncthreads()
@@ -88,7 +87,7 @@ void gemm_kernel_v4(CtaTiler cta_tiler,
     // pipe_read = 1;
 
     // Accumulator
-    Tensor tCgC = thr_mma.partition_C(gC); // (MMA, MMA_M, MMA_N)
+    Tensor tCgC = thr_mma.partition_C(gC);       // (MMA, MMA_M, MMA_N)
     Tensor tCrC = thr_mma.make_fragment_C(tCgC); // (MMA, MMA_M, MMA_N)
     clear(tCrC);
 
@@ -97,34 +96,54 @@ void gemm_kernel_v4(CtaTiler cta_tiler,
     auto K_TILE_MAX = size<3>(tAgA);
 
     CUTE_UNROLL
-    for (int k_pipe = 0; k_pipe < N_PIPES - 1; ++k_pipe) {
+    for (int k_pipe = 0; k_pipe < N_PIPES - 1; ++k_pipe)
+    {
         copy(g2s_copy_A, tAgA(_, _, _, k_tile_next), tAsA(_, _, _, k_pipe));
         copy(g2s_copy_B, tBgB(_, _, _, k_tile_next), tBsB(_, _, _, k_pipe));
         cp_async_fence();
-        k_tile_next = (k_tile_next < K_TILE_MAX - 1) ? k_tile_next + 1: k_tile_next;
+        k_tile_next = (k_tile_next < K_TILE_MAX - 1) ? k_tile_next + 1 : k_tile_next;
     }
 
-    // auto K_BLOCK_MAX = size<2>(tCrA);
-
     auto pipe_read = 0;
-    auto pipe_write = N_PIPES -1;
-    CUTE_NO_UNROLL
-    for (int k_tile = 0; k_tile < K_TILE_MAX; ++k_tile)
+    auto pipe_write = N_PIPES - 1;
+    auto K_BLOCK_MAX = size<2>(tCrA);
+    if (K_BLOCK_MAX > 1)
     {
         cp_async_wait<N_PIPES - 2>();
         __syncthreads();
 
-        copy(s2r_copy_A, tXsA(_, _, _, pipe_read), tXrA);
-        copy(s2r_copy_B, tXsB(_, _, _, pipe_read), tXrB);
-        pipe_read = (pipe_read + 1) % N_PIPES;
+        copy(s2r_copy_A, tXsA(_, _, _0{}, pipe_read), tXrA(_, _, _0{}));
+        copy(s2r_copy_B, tXsB(_, _, _0{}, pipe_read), tXrB(_, _, _0{}));
+    }
 
-        copy(g2s_copy_A, tAgA(_, _, _, k_tile_next), tAsA(_, _, _, pipe_write));
-        copy(g2s_copy_B, tBgB(_, _, _, k_tile_next), tBsB(_, _, _, pipe_write));
-        cp_async_fence();
-        k_tile_next = (k_tile_next < K_TILE_MAX - 1) ? k_tile_next + 1: k_tile_next;
-        pipe_write = (pipe_write + 1) % N_PIPES;
+    CUTE_NO_UNROLL
+    for (int k_tile = 0; k_tile < K_TILE_MAX; ++k_tile)
+    {
+        CUTE_UNROLL
+        for (int k_block = 0; k_block < K_BLOCK_MAX; ++k_block)
+        {
+            if (k_block == 0)
+            {
+                copy(g2s_copy_A, tAgA(_, _, _, k_tile_next), tAsA(_, _, _, pipe_write));
+                copy(g2s_copy_B, tBgB(_, _, _, k_tile_next), tBsB(_, _, _, pipe_write));
+                cp_async_fence();
+                k_tile_next = (k_tile_next < K_TILE_MAX - 1) ? k_tile_next + 1 : k_tile_next;
+                pipe_write = (pipe_write + 1) % N_PIPES;
+            }
 
-        gemm(mma, tCrA, tCrB, tCrC);
+            if (k_block == K_BLOCK_MAX - 1)
+            {
+                cp_async_wait<N_PIPES - 2>();
+                __syncthreads();
+                pipe_read = (pipe_read + 1) % N_PIPES;
+            }
+
+            auto k_block_next = (k_block + 1) % K_BLOCK_MAX;
+            copy(s2r_copy_A, tXsA(_, _, k_block_next, pipe_read), tXrA(_, _, k_block_next));
+            copy(s2r_copy_B, tXsB(_, _, k_block_next, pipe_read), tXrB(_, _, k_block_next));
+
+            gemm(mma, tCrA(_, _, k_block), tCrB(_, _, k_block), tCrC);
+        }
     }
 
     axpby(alpha, tCrC, beta, tCgC);
@@ -161,18 +180,18 @@ void cute_gemm_v4(const TA *A, const TB *B, TC *C, int M, int N, int K, Alpha al
     // auto g2s_copy_B = make_tiled_copy(Copy_Atom<UniversalCopy<CopyT>, TB>{}, thr_layout_B, val_layout_B);
 
     TiledCopy g2s_copy_A = make_tiled_copy(Copy_Atom<SM80_CP_ASYNC_CACHEALWAYS<uint128_t>, TA>{},
-                                    thr_layout_A, // Thr layout 32x8 m-major
-                                    val_layout_A);// Val layout  4x1 m-major
+                                           thr_layout_A,  // Thr layout 32x8 m-major
+                                           val_layout_A); // Val layout  4x1 m-major
     TiledCopy g2s_copy_B = make_tiled_copy(Copy_Atom<SM80_CP_ASYNC_CACHEALWAYS<uint128_t>, TB>{},
-                                    thr_layout_B, // Thr layout 32x8 n-major
-                                    val_layout_B);// Val layout  4x1 n-major
+                                           thr_layout_B,  // Thr layout 32x8 n-major
+                                           val_layout_B); // Val layout  4x1 n-major
 
     auto s2r_copy_atom_A = Copy_Atom<AutoVectorizingCopy, TA>{};
 
-    //Copy_Atom<DefaultCopy, half_t> s2r_atom_B;
-    //Copy_Atom<UniversalCopy<half_t>, half_t> s2r_atom_B;
-    //Copy_Atom<SM75_U32x1_LDSM_N, half_t> s2r_atom_B;
-    //Copy_Atom<SM75_U32x2_LDSM_N, half_t> s2r_atom_B;
+    // Copy_Atom<DefaultCopy, half_t> s2r_atom_B;
+    // Copy_Atom<UniversalCopy<half_t>, half_t> s2r_atom_B;
+    // Copy_Atom<SM75_U32x1_LDSM_N, half_t> s2r_atom_B;
+    // Copy_Atom<SM75_U32x2_LDSM_N, half_t> s2r_atom_B;
     auto s2r_copy_atom_B = Copy_Atom<AutoVectorizingCopy, TB>{};
 
     auto thr_mma = make_layout(make_shape(_16{}, _16{}, _1{}));
@@ -182,7 +201,7 @@ void cute_gemm_v4(const TA *A, const TB *B, TC *C, int M, int N, int K, Alpha al
     dim3 blockDim(size(mma));
     dim3 gridDim(cdiv(M, bM), cdiv(N, bN));
     auto smem_size = int(sizeof(SharedStorage<TA, decltype(layout_sA), TB, decltype(layout_sB)>));
-    
+
     gemm_kernel_v4<<<gridDim, blockDim, smem_size, 0>>>(
         cta_tiler,
         A, layout_A, layout_sA, g2s_copy_A, s2r_copy_atom_A,

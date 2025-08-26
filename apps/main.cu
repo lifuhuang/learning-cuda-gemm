@@ -4,6 +4,8 @@
 #include <vector>
 #include <algorithm>
 #include <torch/torch.h>
+#include <thread>
+#include <chrono>
 
 #include "cublas_sgemm.hpp"
 #include "cute_gemm_v1.cuh"
@@ -11,12 +13,6 @@
 #include "cute_gemm_v3.cuh"
 #include "cute_gemm_v4.cuh"
 #include "utils.hpp"
-
-void print_usage(const char* program_name) {
-    std::cout << "Usage: " << program_name << " [repeat_count]" << std::endl;
-    std::cout << "  repeat_count: Number of iterations to run each benchmark (default: 1)" << std::endl;
-    std::cout << "Example: " << program_name << " 10" << std::endl;
-}
 
 struct BenchmarkStats {
     float avg_gflops;
@@ -36,7 +32,7 @@ struct Noop
 template <class Work,
           class Prolog = Noop,
           class Epilog = Noop>
-BenchmarkStats benchmark(int repeat, int M, int N, int K,
+BenchmarkStats benchmark(int repeat, int warmup, int M, int N, int K,
                 Work &&work,
                 Prolog &&prolog = {},
                 Epilog &&epilog = {},
@@ -46,10 +42,12 @@ BenchmarkStats benchmark(int repeat, int M, int N, int K,
     std::vector<float> gflops_measurements;
     gflops_measurements.reserve(repeat);
 
-    // warmup
-    std::forward<Prolog>(prolog)();
-    std::forward<Work>(work)();
-    std::forward<Epilog>(epilog)();
+    for (int i = 0; i < warmup; ++i)
+    {
+        std::forward<Prolog>(prolog)();
+        std::forward<Work>(work)();
+        std::forward<Epilog>(epilog)();
+    }
 
     for (int i = 0; i < repeat; ++i)
     {
@@ -84,11 +82,12 @@ BenchmarkStats benchmark(int repeat, int M, int N, int K,
     } else {
         p50 = gflops_measurements[repeat/2];
     }
+    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
     
     return {avg, p50};
 }
 
-void run_benchmark(cublasHandle_t handle, int repeat)
+void run_benchmark(cublasHandle_t handle, int repeat, int warmup)
 {
     using namespace std;
     const int M = 5120;
@@ -120,30 +119,30 @@ void run_benchmark(cublasHandle_t handle, int repeat)
         assert(torch::allclose(C_copy, ans));
     };
 
-    auto cublas_stats = benchmark(repeat, M, N, K, [&]()
+    auto cublas_stats = benchmark(repeat, warmup, M, N, K, [&]()
                                    { cublas_sgemm(handle, A_ptr, B_ptr, C_ptr, M, N, K, alpha, beta); }, prolog, epilog);
     cublas_stats.print("cuBLAS SGEMM");
     cout << endl;
 
-    // auto cute_v1_stats = benchmark(repeat, M, N, K, [&]()
-    //                                 { cute_gemm_v1(A_ptr, B_ptr, C_ptr, M, N, K, alpha, beta); }, prolog, epilog);
-    // cute_v1_stats.print("CUTE_v1 SGEMM");
-    // cout << "CUTE_v1 / cuBLAS (avg): " << (cute_v1_stats.avg_gflops / cublas_stats.avg_gflops) * 100.0f << " %";
-    // cout << ", (p50): " << (cute_v1_stats.p50_gflops / cublas_stats.p50_gflops) * 100.0f << " %" << endl << endl;
+    auto cute_v1_stats = benchmark(repeat, warmup, M, N, K, [&]()
+                                    { cute_gemm_v1(A_ptr, B_ptr, C_ptr, M, N, K, alpha, beta); }, prolog, epilog);
+    cute_v1_stats.print("CUTE_v1 SGEMM");
+    cout << "CUTE_v1 / cuBLAS (avg): " << (cute_v1_stats.avg_gflops / cublas_stats.avg_gflops) * 100.0f << " %";
+    cout << ", (p50): " << (cute_v1_stats.p50_gflops / cublas_stats.p50_gflops) * 100.0f << " %" << endl << endl;
 
-    // auto cute_v2_stats = benchmark(repeat, M, N, K, [&]()
-    //                                 { cute_gemm_v2(A_ptr, B_ptr, C_ptr, M, N, K, alpha, beta); }, prolog, epilog);
-    // cute_v2_stats.print("CUTE_v2 SGEMM");
-    // cout << "CUTE_v2 / cuBLAS (avg): " << (cute_v2_stats.avg_gflops / cublas_stats.avg_gflops) * 100.0f << " %";
-    // cout << ", (p50): " << (cute_v2_stats.p50_gflops / cublas_stats.p50_gflops) * 100.0f << " %" << endl << endl;
+    auto cute_v2_stats = benchmark(repeat, warmup, M, N, K, [&]()
+                                    { cute_gemm_v2(A_ptr, B_ptr, C_ptr, M, N, K, alpha, beta); }, prolog, epilog);
+    cute_v2_stats.print("CUTE_v2 SGEMM");
+    cout << "CUTE_v2 / cuBLAS (avg): " << (cute_v2_stats.avg_gflops / cublas_stats.avg_gflops) * 100.0f << " %";
+    cout << ", (p50): " << (cute_v2_stats.p50_gflops / cublas_stats.p50_gflops) * 100.0f << " %" << endl << endl;
 
-    // auto cute_v3_stats = benchmark(repeat, M, N, K, [&]()
-    //                                 { cute_gemm_v3(A_ptr, B_ptr, C_ptr, M, N, K, alpha, beta); }, prolog, epilog);
-    // cute_v3_stats.print("CUTE_v3 SGEMM");
-    // cout << "CUTE_v3 / cuBLAS (avg): " << (cute_v3_stats.avg_gflops / cublas_stats.avg_gflops) * 100.0f << " %";
-    // cout << ", (p50): " << (cute_v3_stats.p50_gflops / cublas_stats.p50_gflops) * 100.0f << " %" << endl << endl;
+    auto cute_v3_stats = benchmark(repeat, warmup, M, N, K, [&]()
+                                    { cute_gemm_v3(A_ptr, B_ptr, C_ptr, M, N, K, alpha, beta); }, prolog, epilog);
+    cute_v3_stats.print("CUTE_v3 SGEMM");
+    cout << "CUTE_v3 / cuBLAS (avg): " << (cute_v3_stats.avg_gflops / cublas_stats.avg_gflops) * 100.0f << " %";
+    cout << ", (p50): " << (cute_v3_stats.p50_gflops / cublas_stats.p50_gflops) * 100.0f << " %" << endl << endl;
 
-    auto cute_v4_stats = benchmark(repeat, M, N, K, [&]()
+    auto cute_v4_stats = benchmark(repeat, warmup, M, N, K, [&]()
                                     { cute_gemm_v4(A_ptr, B_ptr, C_ptr, M, N, K, alpha, beta); }, prolog, epilog);
     cute_v4_stats.print("CUTE_v4 SGEMM");
     cout << "CUTE_v4 / cuBLAS (avg): " << (cute_v4_stats.avg_gflops / cublas_stats.avg_gflops) * 100.0f << " %";
@@ -152,29 +151,34 @@ void run_benchmark(cublasHandle_t handle, int repeat)
 
 int main(int argc, char* argv[])
 {
-    int repeat = 10; // default repeat count
-    
+    int repeat = 100; // default repeat count
+    int warmup = 10; // default warmup count
+
     // Parse command line arguments
     if (argc > 1) {
         std::string arg1(argv[1]);
-        if (arg1 == "-h" || arg1 == "--help") {
-            print_usage(argv[0]);
-            return 0;
-        }
-        
         repeat = std::atoi(argv[1]);
         if (repeat <= 0) {
             std::cerr << "Error: repeat count must be a positive integer" << std::endl;
-            print_usage(argv[0]);
+            return 1;
+        }
+    }
+
+    if (argc > 2) {
+        std::string arg2(argv[2]);
+        warmup = std::atoi(argv[2]);
+        if (warmup <= 0) {
+            std::cerr << "Error: warmup count must be a positive integer" << std::endl;
             return 1;
         }
     }
     
-    std::cout << "Running benchmark with " << repeat << " iterations" << std::endl;
+    std::cout << "Running benchmark with " << repeat << " iterations." << std::endl;
     
     cublasHandle_t handle;
     cublasCreate(&handle);
-    run_benchmark(handle, repeat);
+    cublasSetMathMode(handle, CUBLAS_DEFAULT_MATH);
+    run_benchmark(handle, repeat, warmup);
     cublasDestroy(handle);
     return 0;
 }
